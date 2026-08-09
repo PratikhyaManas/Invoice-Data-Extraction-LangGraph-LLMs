@@ -1,0 +1,25 @@
+# Bandit configuration for SAST scanning of invoice_extraction.
+#
+# Usage:
+#   bandit -c security/bandit.yaml -r src/ -f json -o bandit-report.json
+#   bandit -c security/bandit.yaml -r src/            # human-readable
+#
+# Mirrors [tool.bandit] in pyproject.toml (kept here too so the exact
+# same config can be pointed at from CI or a standalone `bandit` call
+# without depending on pyproject.toml discovery).
+
+exclude_dirs:
+  - tests
+  - .venv
+  - build
+  - dist
+
+# Fail CI on medium+ severity / medium+ confidence findings; low-severity
+# informational findings are still reported but don't break the build.
+assert_used:
+  skips: ["*/tests/*"]
+
+# Explicitly do NOT skip any check ids -- every finding should be triaged
+# and either fixed or given an inline `# nosec` with a justification
+# comment, not globally suppressed here.
+skips: []

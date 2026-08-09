@@ -1,0 +1,74 @@
+# Semgrep configuration for SAST scanning of invoice_extraction.
+#
+# Usage:
+#   semgrep scan --config security/semgrep.yml src/
+#
+# This combines Semgrep's curated, community-maintained Python security
+# rulesets with a couple of project-specific rules that matter for an
+# LLM + Spark/Delta pipeline (prompt-injection-adjacent string building,
+# unsafe deserialization, and SQL built from f-strings against Unity
+# Catalog identifiers).
+
+rules:
+  - id: no-eval-or-exec
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Avoid eval()/exec() -- especially risky in a pipeline that ingests
+      untrusted, LLM-produced text.
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+
+  - id: no-pickle-load
+    languages: [python]
+    severity: ERROR
+    message: >-
+      pickle.load/loads can execute arbitrary code on untrusted input.
+      Use json for any data that ever touches an LLM response or an
+      uploaded file.
+    patterns:
+      - pattern-either:
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+
+  - id: no-fstring-sql
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Building SQL/DDL with an f-string risks injection if any
+      component is user-controlled (e.g. catalog/schema/table names
+      sourced from job parameters). Validate identifiers against an
+      allow-list before interpolating, or use parameterized queries for
+      values.
+    patterns:
+      - pattern-either:
+          - pattern: spark.sql(f"...")
+      - metavariable-regex:
+          metavariable: $X
+          regex: .*
+
+  - id: no-hardcoded-secret-like-assignment
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Possible hardcoded secret. Use Databricks secret scopes
+      (dbutils.secrets.get) or environment variables instead.
+    patterns:
+      - pattern-either:
+          - pattern: $VAR = "sk-..."
+          - pattern: $VAR = "AKIA..."
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)(key|token|secret|password|credential)
+
+  - id: requests-without-timeout
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Network calls without an explicit timeout can hang a Databricks
+      job indefinitely and burn cluster hours.
+    patterns:
+      - pattern: requests.$METHOD(...)
+      - pattern-not: requests.$METHOD(..., timeout=$T, ...)

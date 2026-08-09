@@ -1,0 +1,20 @@
+-r requirements.txt
+
+# testing
+pytest==8.3.4
+pytest-cov==6.0.0
+pytest-mock==3.14.0
+
+# lint / format
+ruff==0.8.4
+black==24.10.0
+mypy==1.13.0
+
+# --- SAST (Static Application Security Testing) ---
+bandit[toml]==1.8.0
+semgrep==1.99.0
+
+# --- SCA (Software Composition Analysis) ---
+pip-audit==2.7.3
+safety==3.2.11
+cyclonedx-bom==5.1.1          # generates an SBOM (CycloneDX) for the SCA report

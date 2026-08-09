@@ -1,0 +1,71 @@
+# Databricks Job definition for the invoice extraction pipeline.
+#
+# Deploy with the Databricks CLI (bundles) or import via the Jobs UI /
+# `databricks jobs create --json @jobs/invoice_pipeline_job.yml` (after
+# converting to the Jobs API JSON shape, or use as a Databricks Asset
+# Bundle `resources` file directly).
+
+resources:
+  jobs:
+    invoice_extraction_pipeline:
+      name: "invoice-extraction-pipeline"
+      tags:
+        team: finance-eng
+        pipeline: invoice-extraction
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"   # daily at 06:00
+        timezone_id: "America/New_York"
+        pause_status: PAUSED   # flip to UNPAUSED after a successful manual run
+
+      max_concurrent_runs: 1
+
+      email_notifications:
+        on_failure:
+          - finance-eng-alerts@example.com
+
+      job_clusters:
+        - job_cluster_key: invoice_pipeline_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 1
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.delta.preview.enabled: "true"
+            custom_tags:
+              team: finance-eng
+
+      tasks:
+        - task_key: run_extraction
+          job_cluster_key: invoice_pipeline_cluster
+          notebook_task:
+            notebook_path: ../notebooks/00_run_pipeline.py
+            base_parameters:
+              catalog: "finance"
+              schema: "invoices"
+              table: "invoice_extractions"
+              write_mode: "merge"
+              input_volume_path: "/Volumes/finance/invoices/raw_pdfs"
+              archive_volume_path: "/Volumes/finance/invoices/processed_pdfs"
+              quarantine_volume_path: "/Volumes/finance/invoices/quarantine_pdfs"
+              llm_endpoint: "databricks-meta-llama-3-3-70b-instruct"
+              max_concurrent_invoices: "8"   # tune down if hitting model-serving rate limits
+              enable_llm_cache: "true"
+          libraries:
+            - pypi:
+                package: "langgraph==0.2.60"
+            - pypi:
+                package: "langchain-core==0.3.28"
+            - pypi:
+                package: "databricks-langchain==0.2.1"
+            - pypi:
+                package: "pdfplumber==0.11.4"
+            - pypi:
+                package: "pytesseract==0.3.13"
+            - pypi:
+                package: "Pillow==11.0.0"
+          timeout_seconds: 7200
+          retry_on_timeout: false
+          max_retries: 1
+          min_retry_interval_millis: 60000

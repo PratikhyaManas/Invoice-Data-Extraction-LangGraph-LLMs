@@ -1,0 +1,120 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Catch newly-disclosed CVEs against already-pinned dependencies,
+    # even on weeks with no code changes.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to the Security tab
+
+jobs:
+  sast:
+    name: SAST (bandit + semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run bandit
+        run: |
+          mkdir -p reports
+          bandit -c security/bandit.yaml -r src/ -f sarif -o reports/bandit.sarif
+          bandit -c security/bandit.yaml -r src/ -f json -o reports/bandit.json
+        continue-on-error: false
+
+      - name: Run semgrep
+        run: |
+          semgrep scan --config security/semgrep.yml src/ --sarif -o reports/semgrep.sarif
+          semgrep scan --config security/semgrep.yml src/ --error
+        continue-on-error: false
+
+      - name: Upload bandit SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/bandit.sarif
+          category: bandit
+
+      - name: Upload semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/semgrep.sarif
+          category: semgrep
+
+      - name: Upload SAST reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-reports
+          path: reports/
+
+  sca:
+    name: SCA (pip-audit + safety + SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pip-audit
+        run: |
+          mkdir -p reports
+          pip-audit -r requirements.txt -f json -o reports/pip-audit.json
+          pip-audit -r requirements.txt
+
+      - name: Run safety
+        run: |
+          safety check -r requirements.txt --json --output reports/safety.json
+          safety check -r requirements.txt
+
+      - name: Generate CycloneDX SBOM
+        run: cyclonedx-py requirements -o reports/sbom.json requirements.txt
+
+      - name: Upload SCA reports + SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-reports
+          path: reports/
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: pytest --cov=invoice_extraction --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml

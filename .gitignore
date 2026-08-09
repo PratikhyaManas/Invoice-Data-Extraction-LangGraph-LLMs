@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Lint / type-check caches
+.ruff_cache/
+.mypy_cache/
+
+# Security scan output
+reports/
+bandit-report.json
+sbom.json
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Databricks / notebooks
+.databricks/
+*.ipynb_checkpoints/
+
+# Local sample data (never commit real invoices)
+sample_data/*.pdf
+!sample_data/README.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
