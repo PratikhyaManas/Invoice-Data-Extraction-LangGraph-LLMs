@@ -9,10 +9,58 @@ dev, pre-commit, and CI.
 
 ## How it works
 
-```
-load_invoice ──┬──> agent1_extract ──┬──> compare_outputs ──[match]────> write_to_delta ──> END
-                │                     │                    \
-                └──> agent2_extract ──┘                     └─[mismatch]─> judge_disagreement ──> write_to_delta
+```mermaid
+flowchart LR
+  subgraph Inputs[Invoice Sources]
+    P[Unity Catalog Volume\nraw_pdfs/*.pdf]
+  end
+
+  subgraph Orchestrator[Batch Orchestrator - runner.py]
+    D[discover_invoices]
+    TP[ThreadPoolExecutor\nmax_concurrent_invoices]
+  end
+
+  subgraph Graph[Per-Invoice LangGraph - graph.py]
+    L[load_invoice\ntext extraction + OCR fallback]
+    A1[agent1_extract\nLLM extract]
+    A2[agent2_extract\nLLM extract]
+    C[compare_outputs\nnormalized diff]
+    J[judge_disagreement\nLLM tie-breaker]
+    W[write_to_delta]
+  end
+
+  subgraph Models[LLM Layer]
+    M[(Databricks/OpenAI/Fake\nvia llm_client.py)]
+    K[(Shared content cache\nutils/cache.py)]
+    R[(Retry + exponential backoff\nutils/retry.py)]
+  end
+
+  subgraph Outputs[Persistence + File Lifecycle]
+    T[(Delta table\ninvoice_extractions)]
+    A[(processed_pdfs)]
+    Q[(quarantine_pdfs)]
+  end
+
+  P --> D --> TP --> L
+  L --> A1
+  L --> A2
+  A1 --> C
+  A2 --> C
+  C -->|match = true| W
+  C -->|match = false| J --> W
+  W --> T
+
+  A1 -.uses.-> M
+  A2 -.uses.-> M
+  J -.uses.-> M
+  A1 -.cache.-> K
+  A2 -.cache.-> K
+  A1 -.retry.-> R
+  A2 -.retry.-> R
+  J -.retry.-> R
+
+  TP -->|success| A
+  TP -->|failure| Q
 ```
 
 1. **load_invoice** — reads a PDF from a Unity Catalog Volume (or any
